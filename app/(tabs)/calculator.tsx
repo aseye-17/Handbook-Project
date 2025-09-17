@@ -41,6 +41,10 @@ export default function CalculatorScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Predictive assistant (simple): target planner inputs (frontend-only)
+  const [targetGPAInput, setTargetGPAInput] = useState<string>('');
+  const [remainingCreditsInput, setRemainingCreditsInput] = useState<string>('');
+
   const mapFromApi = (c: API.Course): CompletedCourse => ({
     id: String(c.id),
     code: c.code,
@@ -225,6 +229,24 @@ export default function CalculatorScreen() {
   const gpaData = calculateGPA();
   const gpaColor = gpaData.gpa >= 3.5 ? Colors.light.success : 
                    gpaData.gpa >= 2.5 ? Colors.light.warning : Colors.light.error;
+
+  // Simple Target GPA planner (no persistence)
+  const planner = (() => {
+    const t = Number(targetGPAInput);
+    const rem = Number(remainingCreditsInput);
+    if (isNaN(t) || t < 0 || t > 4.0 || isNaN(rem) || rem <= 0) return null;
+    const currentWeighted = courses.reduce(
+      (sum, c) => sum + c.credits * (typeof c.grade === 'number' ? c.grade : Number(c.grade)),
+      0
+    );
+    const currentCredits = courses.reduce((sum, c) => sum + c.credits, 0);
+    const totalCredits = currentCredits + rem;
+    const requiredWeighted = t * totalCredits - currentWeighted;
+    const requiredAvg = requiredWeighted / rem;
+    const feasible = requiredAvg <= 4.0 && requiredAvg >= 0;
+    const suggestedLetter = pointsToLetter(Math.max(0, Math.min(4.0, requiredAvg)));
+    return { target: t, remaining: rem, requiredAvg, feasible, suggestedLetter, totalCredits };
+  })();
 
   const startEdit = (course: CompletedCourse) => {
     setEditingId(course.id);
@@ -525,6 +547,44 @@ export default function CalculatorScreen() {
         {renderCoursesList()}
         {renderAddForm()}
         {renderGradeScale()}
+
+        {/* Simple Predictive Assistant: Target GPA Planner */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Target GPA Planner</Text>
+          <View style={styles.addForm}>
+            <View>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Target GPA (0.0 - 4.0)"
+                keyboardType="numeric"
+                value={targetGPAInput}
+                onChangeText={setTargetGPAInput}
+              />
+              <TextInput
+                style={styles.formInput}
+                placeholder="Remaining Credits"
+                keyboardType="numeric"
+                value={remainingCreditsInput}
+                onChangeText={setRemainingCreditsInput}
+              />
+            </View>
+            {planner && (
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: Colors.light.text.secondary }}>
+                  Required average points over next {planner.remaining} credits: <Text style={{ color: Colors.light.text.primary, fontWeight: '600' }}>{planner.requiredAvg.toFixed(2)}</Text>
+                </Text>
+                <Text style={{ color: Colors.light.text.secondary }}>
+                  Suggested letter target: <Text style={{ color: Colors.light.text.primary, fontWeight: '600' }}>{planner.suggestedLetter}</Text>
+                </Text>
+                {!planner.feasible ? (
+                  <Text style={[styles.errorText, { marginTop: 0 }]}>This target is not feasible with the given remaining credits.</Text>
+                ) : (
+                  <Text style={{ color: Colors.light.success }}>Feasible based on current plan.</Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
       </ScrollView>
 
       {!showAddForm && (

@@ -17,6 +17,7 @@ import { Search, BookOpen, TrendingUp, Users, Award, Bell } from 'lucide-react-n
 export default function HomeScreen() {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  const totalProgrammes = mockHandbooks.reduce((sum, h) => sum + h.programmes.length, 0);
 
   const filteredHandbooks = mockHandbooks.filter(handbook =>
     handbook.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -56,7 +57,7 @@ export default function HomeScreen() {
             <View style={styles.statIcon}>
               <BookOpen size={24} color={Colors.light.primary} />
             </View>
-            <Text style={styles.statNumber}>12</Text>
+            <Text style={styles.statNumber}>{totalProgrammes}</Text>
             <Text style={styles.statLabel}>Programmes</Text>
           </View>
           <View style={styles.statCard}>

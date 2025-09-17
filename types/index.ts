@@ -16,6 +16,7 @@ export interface Handbook {
   year: string;
   description: string;
   coverImage?: string;
+  lastUpdated?: string;
   programmes: Programme[];
 }
 
@@ -34,6 +35,7 @@ export interface Level {
   number: number;
   coreCourses: Course[];
   electiveCourses: Course[];
+  tracks?: string[];
 }
 
 export interface Course {
@@ -46,6 +48,10 @@ export interface Course {
   prerequisites?: string[];
   isCompleted?: boolean;
   grade?: number;
+  type?: 'core' | 'elective';
+  semester?: number;
+  level?: number;
+  track?: string;
 }
 
 export interface GPACalculation {
@@ -55,9 +61,9 @@ export interface GPACalculation {
   courses: CompletedCourse[];
 }
 
-export interface CompletedCourse extends Course {
+export interface CompletedCourse extends Omit<Course, 'semester'> {
   grade: number;
-  semester: string;
+  semester: string; // Keep as string for completed courses (e.g., "Fall 2023")
   completedAt: string;
   category?: 'Core' | 'Elective' | 'General';
 }
