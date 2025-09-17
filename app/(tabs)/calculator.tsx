@@ -8,12 +8,15 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Colors } from '@/constants/Colors';
 import { CompletedCourse, GPACalculation } from '@/types';
-import { Calculator, Plus, Trash2, TrendingUp, Award, Target } from 'lucide-react-native';
+import { Calculator, Plus, Trash2, TrendingUp, Award, Target, Edit3, Check, X } from 'lucide-react-native';
+import { useAuth } from '@/contexts/AuthContext';
+import * as API from '@/utils/api';
 
 export default function CalculatorScreen() {
+  const { token } = useAuth();
   const [courses, setCourses] = useState<CompletedCourse[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCourse, setNewCourse] = useState({
@@ -23,12 +26,111 @@ export default function CalculatorScreen() {
     grade: '',
     semester: '',
   });
+  const [newErrors, setNewErrors] = useState<{ [k: string]: string }>({});
 
-  const gradePoints: { [key: string]: number } = {
-    'A+': 4.0, 'A': 4.0, 'A-': 3.7,
-    'B+': 3.3, 'B': 3.0, 'B-': 2.7,
-    'C+': 2.3, 'C': 2.0, 'C-': 1.7,
-    'D+': 1.3, 'D': 1.0, 'F': 0.0,
+  // Editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editCourse, setEditCourse] = useState({
+    code: '',
+    title: '',
+    credits: '',
+    grade: '',
+    semester: '',
+  });
+  const [editErrors, setEditErrors] = useState<{ [k: string]: string }>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const mapFromApi = (c: API.Course): CompletedCourse => ({
+    id: String(c.id),
+    code: c.code,
+    title: c.title,
+    credits: c.credits,
+    weight: c.credits,
+    description: '',
+    grade: c.grade,
+    semester: c.semester || '',
+    completedAt: new Date().toISOString(),
+  });
+
+  // Load courses when logged in
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!token) {
+        setCourses([]);
+        return;
+      }
+      try {
+        setLoading(true);
+        setError(null);
+        const items = await API.listCourses(token);
+        if (!cancelled) setCourses(items.map(mapFromApi));
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Failed to load courses');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  // Grading system bands and points based on the spec provided
+  const gradeBands: { letter: 'A'|'B+'|'B'|'C+'|'C'|'D+'|'D'|'E'|'F'; min: number; max: number; points: number }[] = [
+    { letter: 'A',  min: 80, max: 100, points: 4.0 },
+    { letter: 'B+', min: 75, max: 79,  points: 3.5 },
+    { letter: 'B',  min: 70, max: 74,  points: 3.0 },
+    { letter: 'C+', min: 65, max: 69,  points: 2.5 },
+    { letter: 'C',  min: 60, max: 64,  points: 2.0 },
+    { letter: 'D+', min: 55, max: 59,  points: 1.5 },
+    { letter: 'D',  min: 50, max: 54,  points: 1.0 },
+    { letter: 'E',  min: 45, max: 49,  points: 0.5 },
+    { letter: 'F',  min: 0,  max: 44,  points: 0.0 },
+  ];
+
+  const gradePoints: { [key: string]: number } = Object.fromEntries(gradeBands.map(b => [b.letter, b.points]));
+
+  const scoreToPoints = (score: number): number | null => {
+    if (isNaN(score) || score < 0 || score > 100) return null;
+    const band = gradeBands.find(b => score >= b.min && score <= b.max);
+    return band ? band.points : null;
+  };
+
+  const pointsToLetter = (points: number): string => {
+    const band = gradeBands.find(b => b.points === points);
+    return band ? band.letter : points.toFixed(1);
+  };
+
+  const parseGradeInput = (value: string): number | null => {
+    const raw = (value || '').trim();
+    if (raw === '') return null;
+    const upper = raw.toUpperCase();
+    // If a letter grade is provided
+    if (upper in gradePoints) return gradePoints[upper];
+    // If numeric: could be 0-4 points or 0-100 percentage
+    const num = Number(raw);
+    if (isNaN(num)) return null;
+    if (num <= 4.0) {
+      if (num < 0) return null;
+      return num; // treat as direct points
+    }
+    // treat as percentage score 0-100
+    return scoreToPoints(num);
+  };
+
+  const validateCourseFields = (course: { code: string; title: string; credits: string; grade: string; semester?: string }) => {
+    const errors: { [k: string]: string } = {};
+    if (!course.code.trim()) errors.code = 'Course code is required';
+    if (!course.title.trim()) errors.title = 'Course title is required';
+    const credits = Number(course.credits);
+    if (course.credits === '' || isNaN(credits)) errors.credits = 'Credits must be a number';
+    else if (!Number.isInteger(credits) || credits <= 0) errors.credits = 'Credits must be a positive integer';
+    const gradeVal = parseGradeInput(course.grade);
+    if (course.grade === '' || gradeVal === null) errors.grade = 'Enter a letter (A, B+, …) or a score 0–100 or points 0.0–4.0';
+    return { errors, credits, gradeVal: gradeVal ?? 0 };
   };
 
   const calculateGPA = (): GPACalculation => {
@@ -55,26 +157,44 @@ export default function CalculatorScreen() {
     };
   };
 
-  const addCourse = () => {
-    if (!newCourse.code || !newCourse.title || !newCourse.credits || !newCourse.grade) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
+  const addCourse = async () => {
+    const { errors, credits, gradeVal } = validateCourseFields(newCourse);
+    setNewErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+      let createdCourse: CompletedCourse;
+      if (token) {
+        const created = await API.createCourse(token, {
+          code: newCourse.code,
+          title: newCourse.title,
+          credits,
+          grade: gradeVal,
+          semester: newCourse.semester || undefined,
+        });
+        createdCourse = mapFromApi(created);
+      } else {
+        // fallback local add if not logged in
+        createdCourse = {
+          id: Date.now().toString(),
+          code: newCourse.code,
+          title: newCourse.title,
+          credits,
+          weight: credits,
+          description: '',
+          grade: gradeVal,
+          semester: newCourse.semester,
+          completedAt: new Date().toISOString(),
+        };
+      }
+      setCourses(prev => [...prev, createdCourse]);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to add course');
+    } finally {
+      setLoading(false);
     }
-
-    const course: CompletedCourse = {
-      id: Date.now().toString(),
-      code: newCourse.code,
-      title: newCourse.title,
-      credits: parseInt(newCourse.credits),
-      weight: parseInt(newCourse.credits),
-      description: '',
-      grade: typeof newCourse.grade === 'string' ? 
-        gradePoints[newCourse.grade] || parseFloat(newCourse.grade) : 
-        parseFloat(newCourse.grade),
-      semester: newCourse.semester,
-    };
-
-    setCourses([...courses, course]);
     setNewCourse({
       code: '',
       title: '',
@@ -82,16 +202,83 @@ export default function CalculatorScreen() {
       grade: '',
       semester: '',
     });
+    setNewErrors({});
     setShowAddForm(false);
   };
 
-  const removeCourse = (courseId: string) => {
-    setCourses(courses.filter(course => course.id !== courseId));
+  const removeCourse = async (courseId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      if (token) {
+        await API.deleteCourse(token, Number(courseId));
+      }
+      setCourses(prev => prev.filter(c => c.id !== courseId));
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete course');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // Compute GPA values for display
   const gpaData = calculateGPA();
   const gpaColor = gpaData.gpa >= 3.5 ? Colors.light.success : 
                    gpaData.gpa >= 2.5 ? Colors.light.warning : Colors.light.error;
+
+  const startEdit = (course: CompletedCourse) => {
+    setEditingId(course.id);
+    setEditCourse({
+      code: course.code,
+      title: course.title,
+      credits: String(course.credits),
+      grade: String(course.grade),
+      semester: course.semester || '',
+    });
+    setEditErrors({});
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditErrors({});
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+    const { errors, credits, gradeVal } = validateCourseFields(editCourse);
+    setEditErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    try {
+      setLoading(true);
+      setError(null);
+      if (token) {
+        const updated = await API.updateCourse(token, Number(editingId), {
+          code: editCourse.code,
+          title: editCourse.title,
+          credits,
+          grade: gradeVal,
+          semester: editCourse.semester || undefined,
+        });
+        const mapped = mapFromApi(updated);
+        setCourses(prev => prev.map(c => c.id === editingId ? { ...mapped } : c));
+      } else {
+        setCourses(prev => prev.map(c => c.id === editingId ? {
+          ...c,
+          code: editCourse.code,
+          title: editCourse.title,
+          credits,
+          weight: credits,
+          grade: gradeVal,
+          semester: editCourse.semester,
+        } : c));
+      }
+      setEditingId(null);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to update course');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const renderGPACard = () => (
     <View style={styles.gpaCard}>
@@ -128,10 +315,10 @@ export default function CalculatorScreen() {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Grade Scale Reference</Text>
       <View style={styles.gradeScale}>
-        {Object.entries(gradePoints).map(([grade, points]) => (
-          <View key={grade} style={styles.gradeItem}>
-            <Text style={styles.gradeText}>{grade}</Text>
-            <Text style={styles.pointsText}>{points.toFixed(1)}</Text>
+        {gradeBands.map(b => (
+          <View key={b.letter} style={styles.gradeItem}>
+            <Text style={styles.gradeText}>{b.letter}</Text>
+            <Text style={styles.pointsText}>{`${b.min}-${b.max} | ${b.points.toFixed(1)} pts`}</Text>
           </View>
         ))}
       </View>
@@ -151,6 +338,7 @@ export default function CalculatorScreen() {
           value={newCourse.code}
           onChangeText={(text) => setNewCourse({...newCourse, code: text.toUpperCase()})}
         />
+        {newErrors.code ? <Text style={styles.errorText}>{newErrors.code}</Text> : null}
         
         <TextInput
           style={styles.formInput}
@@ -158,6 +346,7 @@ export default function CalculatorScreen() {
           value={newCourse.title}
           onChangeText={(text) => setNewCourse({...newCourse, title: text})}
         />
+        {newErrors.title ? <Text style={styles.errorText}>{newErrors.title}</Text> : null}
         
         <View style={styles.formRow}>
           <TextInput
@@ -167,13 +356,15 @@ export default function CalculatorScreen() {
             onChangeText={(text) => setNewCourse({...newCourse, credits: text})}
             keyboardType="numeric"
           />
+          {newErrors.credits ? <Text style={styles.errorTextInline}>{newErrors.credits}</Text> : null}
           
           <TextInput
             style={[styles.formInput, styles.halfInput]}
-            placeholder="Grade (A, B+, 3.5, etc.)"
+            placeholder="Grade (A, B+), Score (0-100) or Points (0-4.0)"
             value={newCourse.grade}
             onChangeText={(text) => setNewCourse({...newCourse, grade: text})}
           />
+          {newErrors.grade ? <Text style={styles.errorTextInline}>{newErrors.grade}</Text> : null}
         </View>
         
         <TextInput
@@ -220,29 +411,96 @@ export default function CalculatorScreen() {
         <Text style={styles.sectionTitle}>Your Courses</Text>
         {courses.map((course) => (
           <View key={course.id} style={styles.courseItem}>
-            <View style={styles.courseHeader}>
-              <View style={styles.courseInfo}>
-                <Text style={styles.courseCode}>{course.code}</Text>
-                <Text style={styles.courseTitle}>{course.title}</Text>
-                {course.semester && (
-                  <Text style={styles.courseSemester}>{course.semester}</Text>
-                )}
+            {editingId === course.id ? (
+              <>
+                <Text style={styles.formTitle}>Edit Course</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Course Code"
+                  value={editCourse.code}
+                  onChangeText={(t) => setEditCourse({ ...editCourse, code: t.toUpperCase() })}
+                />
+                {editErrors.code ? <Text style={styles.errorText}>{editErrors.code}</Text> : null}
+
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Course Title"
+                  value={editCourse.title}
+                  onChangeText={(t) => setEditCourse({ ...editCourse, title: t })}
+                />
+                {editErrors.title ? <Text style={styles.errorText}>{editErrors.title}</Text> : null}
+
+                <View style={styles.formRow}>
+                  <TextInput
+                    style={[styles.formInput, styles.halfInput]}
+                    placeholder="Credits"
+                    value={editCourse.credits}
+                    onChangeText={(t) => setEditCourse({ ...editCourse, credits: t })}
+                    keyboardType="numeric"
+                  />
+                  {editErrors.credits ? <Text style={styles.errorTextInline}>{editErrors.credits}</Text> : null}
+
+                  <TextInput
+                    style={[styles.formInput, styles.halfInput]}
+                    placeholder="Grade (A, B+), Score (0-100) or Points (0-4.0)"
+                    value={editCourse.grade}
+                    onChangeText={(t) => setEditCourse({ ...editCourse, grade: t })}
+                  />
+                  {editErrors.grade ? <Text style={styles.errorTextInline}>{editErrors.grade}</Text> : null}
+                </View>
+
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Semester (optional)"
+                  value={editCourse.semester}
+                  onChangeText={(t) => setEditCourse({ ...editCourse, semester: t })}
+                />
+
+                <View style={styles.formButtons}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={cancelEdit}>
+                    <X size={18} color={Colors.light.text.secondary} />
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.addButton} onPress={saveEdit}>
+                    <Check size={18} color={'white'} />
+                    <Text style={styles.addButtonText}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <View style={styles.courseHeader}>
+                <View style={styles.courseInfo}>
+                  <Text style={styles.courseCode}>{course.code}</Text>
+                  <Text style={styles.courseTitle}>{course.title}</Text>
+                  {course.semester && (
+                    <Text style={styles.courseSemester}>{course.semester}</Text>
+                  )}
+                </View>
+
+                <View style={styles.courseGrade}>
+                  <Text style={styles.gradeValue}>
+                    {pointsToLetter(typeof course.grade === 'number' ? course.grade : Number(course.grade))}
+                    {` (${typeof course.grade === 'number' ? course.grade.toFixed(1) : Number(course.grade).toFixed(1)})`}
+                  </Text>
+                  <Text style={styles.creditsValue}>{course.credits} cr</Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => startEdit(course)}
+                  >
+                    <Edit3 size={18} color={Colors.light.text.secondary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.removeButton}
+                    onPress={() => removeCourse(course.id)}
+                  >
+                    <Trash2 size={18} color={Colors.light.error} />
+                  </TouchableOpacity>
+                </View>
               </View>
-              
-              <View style={styles.courseGrade}>
-                <Text style={styles.gradeValue}>
-                  {typeof course.grade === 'number' ? course.grade.toFixed(1) : course.grade}
-                </Text>
-                <Text style={styles.creditsValue}>{course.credits} cr</Text>
-              </View>
-              
-              <TouchableOpacity
-                style={styles.removeButton}
-                onPress={() => removeCourse(course.id)}
-              >
-                <Trash2 size={18} color={Colors.light.error} />
-              </TouchableOpacity>
-            </View>
+            )}
           </View>
         ))}
       </View>
@@ -255,6 +513,12 @@ export default function CalculatorScreen() {
         <Text style={styles.headerTitle}>GPA Calculator</Text>
         <Text style={styles.headerSubtitle}>Track your academic performance</Text>
       </View>
+
+      {error ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{error}</Text>
+        </View>
+      ) : null}
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {renderGPACard()}
@@ -279,6 +543,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.light.background,
+  },
+  errorBanner: {
+    backgroundColor: Colors.light.error + '20',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 20,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    color: Colors.light.error,
   },
   header: {
     paddingHorizontal: 20,
@@ -448,6 +723,10 @@ const styles = StyleSheet.create({
   removeButton: {
     padding: 4,
   },
+  editButton: {
+    padding: 4,
+    marginRight: 8,
+  },
   addForm: {
     backgroundColor: Colors.light.card,
     borderRadius: 16,
@@ -505,6 +784,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'white',
+  },
+  errorText: {
+    color: Colors.light.error,
+    fontSize: 12,
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  errorTextInline: {
+    color: Colors.light.error,
+    fontSize: 12,
+    position: 'absolute',
+    right: 12,
+    bottom: -4,
   },
   fab: {
     position: 'absolute',

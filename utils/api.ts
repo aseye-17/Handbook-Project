@@ -31,6 +31,79 @@ async function toError(res: Response) {
   }
 }
 
+// GPA Courses API
+export type Course = {
+  id: number;
+  owner_email: string;
+  code: string;
+  title: string;
+  credits: number;
+  grade: number;
+  semester?: string | null;
+};
+
+export async function listCourses(token: string): Promise<Course[]> {
+  const res = await fetch(`${BASE_URL}/api/v1/courses/`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw await toError(res);
+  return res.json();
+}
+
+export async function createCourse(
+  token: string,
+  data: { code: string; title: string; credits: number; grade: number; semester?: string }
+): Promise<Course> {
+  const res = await fetch(`${BASE_URL}/api/v1/courses/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw await toError(res);
+  return res.json();
+}
+
+export async function deleteCourse(token: string, id: number): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/v1/courses/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw await toError(res);
+}
+
+export async function updateCourse(
+  token: string,
+  id: number,
+  data: Partial<{ code: string; title: string; credits: number; grade: number; semester?: string }>
+): Promise<Course> {
+  const res = await fetch(`${BASE_URL}/api/v1/courses/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw await toError(res);
+  return res.json();
+}
+
+export async function gpaSummary(token: string): Promise<{
+  totalCredits: number;
+  totalWeightedPoints: number;
+  gpa: number;
+  count: number;
+}> {
+  const res = await fetch(`${BASE_URL}/api/v1/courses/summary`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw await toError(res);
+  return res.json();
+}
+
 export async function signup(data: { email: string; password: string; full_name?: string }) {
   const res = await fetch(`${BASE_URL}/api/v1/auth/signup`, {
     method: "POST",

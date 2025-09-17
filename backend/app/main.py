@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database import engine, Base
 from app.routes import auth, users
+from app.routes import courses
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -25,6 +26,7 @@ app.add_middleware(
 # Include API routes
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["users"])
+app.include_router(courses.router, prefix=f"{settings.API_V1_STR}/courses", tags=["courses"])
 
 @app.on_event("startup")
 def on_startup():
