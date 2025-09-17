@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+*.sqlite3
+
+# Environment
+.env
+
+# Local DB files
+sql_app.db
+
+# Alembic
+alembic.ini
+migrations/versions/__pycache__/

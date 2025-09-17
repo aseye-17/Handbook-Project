@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Platform,
 } from 'react-native';
+
 import { useState } from 'react';
 import { router } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,6 +23,14 @@ export default function ProfileScreen() {
   );
 
   const handleLogout = () => {
+    // On web, the native Alert can be unreliable; log out immediately
+    if (Platform.OS === 'web') {
+      console.log('[profile] logout clicked (web)');
+      logout();
+      router.replace('/(auth)');
+      return;
+    }
+    // Native: confirm before logging out
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
@@ -30,6 +40,7 @@ export default function ProfileScreen() {
           text: 'Logout',
           style: 'destructive',
           onPress: () => {
+            console.log('[profile] logout confirmed (native)');
             logout();
             router.replace('/(auth)');
           },
