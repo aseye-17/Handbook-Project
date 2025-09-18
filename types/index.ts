@@ -8,6 +8,9 @@ export interface User {
     language: 'en' | 'fr' | 'es';
     notifications: boolean;
   };
+  role: 'student' | 'admin';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Handbook {
@@ -16,7 +19,6 @@ export interface Handbook {
   year: string;
   description: string;
   coverImage?: string;
-  lastUpdated?: string;
   programmes: Programme[];
 }
 
@@ -35,23 +37,54 @@ export interface Level {
   number: number;
   coreCourses: Course[];
   electiveCourses: Course[];
-  tracks?: string[];
 }
 
 export interface Course {
-  id: string;
   code: string;
   title: string;
   credits: number;
-  weight: number;
-  description: string;
+  type: 'core' | 'elective';
+  description?: string;
   prerequisites?: string[];
   isCompleted?: boolean;
   grade?: number;
-  type?: 'core' | 'elective';
-  semester?: number;
-  level?: number;
-  track?: string;
+}
+
+export interface SemesterCourses {
+  [key: string]: Course[];
+}
+
+export interface LevelCourses {
+  [key: string]: SemesterCourses;
+}
+
+export interface ProgramCourses {
+  [key: string]: LevelCourses;
+}
+
+export interface ProgramStructure {
+  name: string;
+  courses: LevelCourses;
+}
+
+export interface Department {
+  name: string;
+  programs: {
+    [key: string]: ProgramStructure;
+  };
+}
+
+export interface School {
+  name: string;
+  departments: {
+    [key: string]: Department;
+  };
+}
+
+export interface AcademicStructure {
+  schools: {
+    [key: string]: School;
+  };
 }
 
 export interface GPACalculation {
@@ -59,11 +92,12 @@ export interface GPACalculation {
   totalWeightedPoints: number;
   gpa: number;
   courses: CompletedCourse[];
+  calculatedAt?: string;
 }
 
-export interface CompletedCourse extends Omit<Course, 'semester'> {
+export interface CompletedCourse extends Course {
   grade: number;
-  semester: string; // Keep as string for completed courses (e.g., "Fall 2023")
+  semester: string;
   completedAt: string;
   category?: 'Core' | 'Elective' | 'General';
 }
